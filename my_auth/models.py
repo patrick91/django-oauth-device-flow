@@ -3,6 +3,7 @@ from authlib.oauth2.rfc6749 import (
     ClientMixin,
     TokenMixin,
 )
+from authlib.oauth2.rfc8628 import DeviceCredentialMixin
 from authlib.oauth2.rfc6749.util import list_to_scope, scope_to_list
 from django.conf import settings
 from django.db import models
@@ -86,6 +87,12 @@ class OAuth2Token(models.Model, TokenMixin):
     def get_expires_at(self):
         return self.issued_at + self.expires_in
 
+    def is_expired(self):
+        return self.get_expires_at() < now_timestamp()
+
+    def is_revoked(self):
+        return False
+
 
 class AuthorizationCode(models.Model, AuthorizationCodeMixin):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -107,3 +114,45 @@ class AuthorizationCode(models.Model, AuthorizationCodeMixin):
 
     def get_auth_time(self):
         return self.auth_time
+
+
+# {'device_code': 'AEgPCnF8VBSBd11PYiXxIYEhVd0nsO27VWnZ2UAcQl',
+#  'expires_in': 1800,
+#  'interval': 5,
+#  'user_code': 'BRXT-XKPR',
+#  'verification_uri': 'http://localhost:8000/active',
+#  'verification_uri_complete': 'http://localhost:8000/active?user_code=BRXT-XKPR'}
+
+class DeviceCredential(models.Model, DeviceCredentialMixin):
+    device_code = models.CharField(max_length=255, unique=True, null=False)
+    user_code = models.CharField(max_length=255, unique=True, null=False)
+    verification_uri = models.TextField(default="", null=True)
+    verification_uri_complete = models.TextField(default="", null=True)
+    auth_time = models.IntegerField(null=False, default=now_timestamp)
+    expires_in = models.IntegerField(null=False, default=0)
+    interval = models.IntegerField(null=False, default=0)
+    client_id = models.CharField(max_length=48, db_index=True)
+    scope = models.TextField(default="", null=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE)
+    verified = models.BooleanField(default=False)
+
+    def get_client_id(self):
+        return self.client_id
+
+    def get_scope(self):
+        return self.scope or ""
+
+    def get_expires_in(self):
+        return self.expires_in
+
+    def get_interval(self):
+        return self.interval
+
+    def is_expired(self):
+        return self.auth_time + 300 < time.time()
+
+    def get_auth_time(self):
+        return self.auth_time
+
+    def get_user_code(self):
+        return self.user_code
